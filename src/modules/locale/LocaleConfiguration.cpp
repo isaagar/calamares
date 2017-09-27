@@ -1,6 +1,7 @@
 /* === This file is part of Calamares - <http://github.com/calamares> ===
  *
  *   Copyright 2016, Teo Mrnjavac <teo@kde.org>
+ *   Copyright 2017, Adriaan de Groot <groot@kde.org>
  *
  *   Calamares is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -17,8 +18,11 @@
  */
 
 #include "LocaleConfiguration.h"
+#include <QLocale>
 
 LocaleConfiguration::LocaleConfiguration()
+    : explicit_lang( false )
+    , explicit_lc( false )
 {
 }
 
@@ -41,6 +45,7 @@ LocaleConfiguration::fromLanguageAndLocation( const QString& languageLocale,
 {
     LocaleConfiguration lc = LocaleConfiguration();
     QString language = languageLocale.split( '_' ).first();
+    lc.myLanguageLocaleBcp47 = QLocale(language).bcp47Name();
 
     QStringList linesForLanguage;
     for ( const QString &line : availableLocales )
@@ -60,7 +65,8 @@ LocaleConfiguration::fromLanguageAndLocation( const QString& languageLocale,
         // FIXME: this might be useless if we already filter out non-UTF8 locales
         foreach ( QString line, linesForLanguage )
         {
-            if ( line.contains( "UTF-8" ) )
+            if ( line.contains( "UTF-8", Qt::CaseInsensitive ) ||
+                 line.contains( "utf8", Qt::CaseInsensitive ) )
                 linesForLanguageUtf.append( line );
         }
 
@@ -266,7 +272,7 @@ LocaleConfiguration::fromLanguageAndLocation( const QString& languageLocale,
 
 
 bool
-LocaleConfiguration::isEmpty()
+LocaleConfiguration::isEmpty() const
 {
     return lang.isEmpty() &&
          lc_numeric.isEmpty() &&

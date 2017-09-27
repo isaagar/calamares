@@ -22,7 +22,11 @@
 
 #include "core/DeviceModel.h"
 #include "core/KPMHelpers.h"
+#include "core/PartitionIterator.h"
 
+#include <kpmcore/backend/corebackend.h>
+#include <kpmcore/backend/corebackendmanager.h>
+#include <kpmcore/core/device.h>
 #include <kpmcore/core/partition.h>
 
 #include <utils/Logger.h>
@@ -41,6 +45,9 @@ canBeReplaced( Partition* candidate )
     if ( !candidate )
         return false;
 
+    if ( candidate->isMounted() )
+        return false;
+
     bool ok = false;
     double requiredStorageGB = Calamares::JobQueue::instance()
                                     ->globalStorage()
@@ -51,8 +58,9 @@ canBeReplaced( Partition* candidate )
     qint64 requiredStorageB = ( requiredStorageGB + 0.5 ) * 1024 * 1024 * 1024;
     cDebug() << "Required  storage B:" << requiredStorageB
              << QString( "(%1GB)" ).arg( requiredStorageB / 1024 / 1024 / 1024 );
-    cDebug() << "Available storage B:" << availableStorageB
-             << QString( "(%1GB)" ).arg( availableStorageB / 1024 / 1024 / 1024 );
+    cDebug() << "Storage capacity  B:" << availableStorageB
+             << QString( "(%1GB)" ).arg( availableStorageB / 1024 / 1024 / 1024 )
+             << "for" << candidate->partitionPath() << "   length:" << candidate->length();
 
     if ( ok &&
          availableStorageB > requiredStorageB )
@@ -78,6 +86,9 @@ canBeResized( Partition* candidate )
     if ( KPMHelpers::isPartitionFreeSpace( candidate ) )
         return false;
 
+    if ( candidate->isMounted() )
+        return false;
+
     if ( candidate->roles().has( PartitionRole::Primary ) )
     {
         PartitionTable* table = dynamic_cast< PartitionTable* >( candidate->parent() );
@@ -93,19 +104,22 @@ canBeResized( Partition* candidate )
                                     ->globalStorage()
                                     ->value( "requiredStorageGB" )
                                     .toDouble( &ok );
+    double advisedStorageGB = requiredStorageGB + 0.5 + 2.0;
 
     qint64 availableStorageB = candidate->available();
 
     // We require a little more for partitioning overhead and swap file
     // TODO: maybe make this configurable?
-    qint64 requiredStorageB = ( requiredStorageGB + 0.5 + 2.0 ) * 1024 * 1024 * 1024;
-    cDebug() << "Required  storage B:" << requiredStorageB
-             << QString( "(%1GB)" ).arg( requiredStorageB / 1024 / 1024 / 1024 );
+    qint64 advisedStorageB = advisedStorageGB * 1024 * 1024 * 1024;
+    cDebug() << "Required  storage B:" << advisedStorageB
+             << QString( "(%1GB)" ).arg( advisedStorageGB );
     cDebug() << "Available storage B:" << availableStorageB
-             << QString( "(%1GB)" ).arg( availableStorageB / 1024 / 1024 / 1024 );
+             << QString( "(%1GB)" ).arg( availableStorageB / 1024 / 1024 / 1024 )
+             << "for" << candidate->partitionPath() << "   length:" << candidate->length()
+             << "   sectorsUsed:" << candidate->sectorsUsed() << "   fsType:" << candidate->fileSystem().name();
 
     if ( ok &&
-         availableStorageB > requiredStorageB )
+         availableStorageB > advisedStorageB )
     {
         cDebug() << "Partition" << candidate->partitionPath() << "authorized for resize + autopartition install.";
 
@@ -143,7 +157,7 @@ canBeResized( PartitionCoreModule* core, const QString& partitionPath )
 }
 
 
-FstabEntryList
+static FstabEntryList
 lookForFstabEntries( const QString& partitionPath )
 {
     FstabEntryList fstabEntries;
@@ -187,7 +201,7 @@ lookForFstabEntries( const QString& partitionPath )
 }
 
 
-QString
+static QString
 findPartitionPathForMountPoint( const FstabEntryList& fstab,
                                 const QString& mountPoint )
 {
@@ -320,5 +334,10 @@ runOsprober( PartitionCoreModule* core )
     return osproberEntries;
 }
 
-
+bool
+isEfiSystem()
+{
+    return QDir( "/sys/firmware/efi/efivars" ).exists();
 }
+
+}  // nmamespace PartUtils
